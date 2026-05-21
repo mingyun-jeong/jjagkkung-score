@@ -16,7 +16,7 @@ type PodiumQueueItem = { rank: 1 | 2 | 3; teamId: number };
 
 export default function DashboardPage() {
   const { judge, hydrated, login, loginGuest, logout } = useJudgeSession();
-  const { state, refresh } = useDashboardStream();
+  const { state } = useDashboardStream();
 
   const ranked = useMemo(
     () => (state ? rankTeams(state.averages) : []),
@@ -123,16 +123,8 @@ export default function DashboardPage() {
                 실시간 평균 점수 · 4개 항목 합산 100점 만점
               </p>
             </div>
-            <div className="flex items-center gap-2 ml-auto">
-              <button
-                type="button"
-                onClick={refresh}
-                className="min-h-[36px] inline-flex items-center px-3 rounded-xl bg-[#1f2647] text-xs font-semibold text-[#a8b1d6] hover:bg-[#2a3358] hover:text-[#f5f7ff]"
-              >
-                새로고침
-              </button>
-              {judge && (
-                <>
+            {judge && (
+              <div className="flex items-center gap-2 ml-auto">
                   <div className="text-right leading-tight">
                     <div className="text-sm font-bold text-[#f5f7ff]">
                       {judge.name}
@@ -166,9 +158,8 @@ export default function DashboardPage() {
                   >
                     로그아웃
                   </button>
-                </>
-              )}
-            </div>
+              </div>
+            )}
           </div>
         </header>
 
