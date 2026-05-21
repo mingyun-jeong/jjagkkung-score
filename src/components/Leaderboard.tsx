@@ -8,7 +8,6 @@ import { SCORE_TOTAL_MAX } from "@/lib/types";
 type Props = {
   rows: Ranked[];
   myTeamId: number | null;
-  onRefresh?: () => void;
 };
 
 const RANK_EMOJI: Record<number, string> = {
@@ -23,27 +22,16 @@ const RANK_COLOR: Record<number, string> = {
   3: "text-[#e0975a]",
 };
 
-export function Leaderboard({ rows, myTeamId, onRefresh }: Props) {
+export function Leaderboard({ rows, myTeamId }: Props) {
   return (
     <div className="rounded-[24px] bg-[#151b33] border border-[#2a3358] p-4 sm:p-5">
-      <div className="flex items-baseline justify-between mb-3 gap-2">
+      <div className="flex items-baseline justify-between mb-3">
         <h2 className="text-lg sm:text-xl font-extrabold tracking-tight">
           LEADERBOARD
         </h2>
-        <div className="flex items-baseline gap-2">
-          <span className="text-[11px] uppercase tracking-[0.25em] text-[#6b739a]">
-            실시간 평균
-          </span>
-          {onRefresh && (
-            <button
-              type="button"
-              onClick={onRefresh}
-              className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-[#1f2647] text-[#a8b1d6] hover:bg-[#2a3358] hover:text-[#f5f7ff]"
-            >
-              새로고침
-            </button>
-          )}
-        </div>
+        <span className="text-[11px] uppercase tracking-[0.25em] text-[#6b739a]">
+          실시간 평균
+        </span>
       </div>
 
       <div className="flex flex-col gap-2">

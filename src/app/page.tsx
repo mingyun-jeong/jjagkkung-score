@@ -123,43 +123,52 @@ export default function DashboardPage() {
                 실시간 평균 점수 · 4개 항목 합산 100점 만점
               </p>
             </div>
-            {judge && (
-              <div className="flex items-center gap-2 ml-auto">
-                <div className="text-right leading-tight">
-                  <div className="text-sm font-bold text-[#f5f7ff]">
-                    {judge.name}
+            <div className="flex items-center gap-2 ml-auto">
+              <button
+                type="button"
+                onClick={refresh}
+                className="min-h-[36px] inline-flex items-center px-3 rounded-xl bg-[#1f2647] text-xs font-semibold text-[#a8b1d6] hover:bg-[#2a3358] hover:text-[#f5f7ff]"
+              >
+                새로고침
+              </button>
+              {judge && (
+                <>
+                  <div className="text-right leading-tight">
+                    <div className="text-sm font-bold text-[#f5f7ff]">
+                      {judge.name}
+                    </div>
+                    <div className="text-[11px] text-[#a8b1d6]">
+                      {judge.teamId
+                        ? TEAM_BY_ID.get(judge.teamId)?.name
+                        : judge.role === "guest"
+                          ? "게스트"
+                          : (judge.role ?? "운영")}
+                    </div>
                   </div>
-                  <div className="text-[11px] text-[#a8b1d6]">
-                    {judge.teamId
-                      ? TEAM_BY_ID.get(judge.teamId)?.name
-                      : judge.role === "guest"
-                        ? "게스트"
-                        : (judge.role ?? "운영")}
-                  </div>
-                </div>
-                <Link
-                  href="/judge"
-                  className="min-h-[36px] inline-flex items-center px-3 rounded-xl bg-[#1f2647] border border-[#ff4d9d]/50 text-xs font-bold text-[#f5f7ff] hover:bg-[#2a3358]"
-                >
-                  점수 입력
-                </Link>
-                {isHost && (
                   <Link
-                    href="/admin"
-                    className="min-h-[36px] inline-flex items-center px-3 rounded-xl bg-[#1f2647] border border-[#ffd66b]/50 text-xs font-bold text-[#f5f7ff] hover:bg-[#2a3358]"
+                    href="/judge"
+                    className="min-h-[36px] inline-flex items-center px-3 rounded-xl bg-[#1f2647] border border-[#ff4d9d]/50 text-xs font-bold text-[#f5f7ff] hover:bg-[#2a3358]"
                   >
-                    관리
+                    점수 입력
                   </Link>
-                )}
-                <button
-                  type="button"
-                  onClick={logout}
-                  className="min-h-[36px] inline-flex items-center px-2 text-xs font-semibold text-[#a8b1d6] hover:text-[#f5f7ff]"
-                >
-                  로그아웃
-                </button>
-              </div>
-            )}
+                  {isHost && (
+                    <Link
+                      href="/admin"
+                      className="min-h-[36px] inline-flex items-center px-3 rounded-xl bg-[#1f2647] border border-[#ffd66b]/50 text-xs font-bold text-[#f5f7ff] hover:bg-[#2a3358]"
+                    >
+                      관리
+                    </Link>
+                  )}
+                  <button
+                    type="button"
+                    onClick={logout}
+                    className="min-h-[36px] inline-flex items-center px-2 text-xs font-semibold text-[#a8b1d6] hover:text-[#f5f7ff]"
+                  >
+                    로그아웃
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </header>
 
@@ -173,7 +182,6 @@ export default function DashboardPage() {
             <Leaderboard
               rows={revealedRows}
               myTeamId={judge?.teamId ?? null}
-              onRefresh={refresh}
             />
           </section>
         ) : (

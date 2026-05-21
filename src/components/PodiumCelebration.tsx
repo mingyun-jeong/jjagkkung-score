@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Team } from "@/lib/teams";
 
@@ -35,12 +35,19 @@ export function PodiumCelebration({
   total,
   onClose,
 }: Props) {
+  // Keep a ref to onClose so SSE-driven re-renders (which give us a fresh
+  // inline arrow each time) don't reset the auto-dismiss timer below.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
   useEffect(() => {
     if (!open) return;
     fireConfetti(rank);
-    const t = setTimeout(onClose, AUTO_DISMISS_MS);
+    const t = setTimeout(() => onCloseRef.current(), AUTO_DISMISS_MS);
     return () => clearTimeout(t);
-  }, [open, rank, onClose]);
+  }, [open, rank]);
 
   return (
     <AnimatePresence>
