@@ -33,8 +33,8 @@ export type DashboardState = {
   revealLocked: boolean;
   /** flips true once the host has completed the 1위 reveal */
   revealed: boolean;
-  /** ranks (1..N) the host has individually exposed, sorted asc */
-  revealedRanks: number[];
+  /** team ids the host has individually exposed, sorted asc */
+  revealedTeamIds: number[];
 };
 
 export type ServerEvent =

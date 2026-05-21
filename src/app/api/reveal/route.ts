@@ -11,8 +11,8 @@ export async function POST(req: NextRequest) {
     locked?: boolean;
     revealed?: boolean;
     reset?: boolean;
-    revealRank?: number;
-    unrevealRank?: number;
+    revealTeamId?: number;
+    unrevealTeamId?: number;
   };
 
   await store.ensureHydrated();
@@ -27,13 +27,14 @@ export async function POST(req: NextRequest) {
   } else {
     if (typeof body.locked === "boolean") await store.setRevealLock(body.locked);
     if (typeof body.revealed === "boolean") await store.setRevealed(body.revealed);
-    if (typeof body.revealRank === "number") await store.revealRank(body.revealRank);
-    if (typeof body.unrevealRank === "number")
-      await store.unrevealRank(body.unrevealRank);
+    if (typeof body.revealTeamId === "number")
+      await store.revealTeam(body.revealTeamId);
+    if (typeof body.unrevealTeamId === "number")
+      await store.unrevealTeam(body.unrevealTeamId);
   }
   return NextResponse.json({
     revealLocked: store.revealLocked,
     revealed: store.revealed,
-    revealedRanks: [...store.revealedRanks].sort((a, b) => a - b),
+    revealedTeamIds: [...store.revealedTeamIds].sort((a, b) => a - b),
   });
 }

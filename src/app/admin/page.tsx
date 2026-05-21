@@ -26,7 +26,7 @@ export default function AdminPage() {
     [state],
   );
 
-  const revealedRanks = state?.revealedRanks ?? [];
+  const revealedTeamIds = state?.revealedTeamIds ?? [];
 
   return (
     <main className="min-h-dvh bg-base text-text-primary">
@@ -67,7 +67,7 @@ export default function AdminPage() {
           <HostRevealPanel
             judgeId={judge.id}
             ranked={ranked}
-            revealedRanks={revealedRanks}
+            revealedTeamIds={revealedTeamIds}
           />
         ) : hydrated && judge && !isHost ? (
           <div className="rounded-[24px] bg-[#151b33] border border-[#2a3358] p-8 text-center text-[#a8b1d6]">

@@ -39,7 +39,7 @@ type RevealRow = {
   id: number;
   reveal_locked: boolean;
   revealed: boolean;
-  revealed_ranks: number[];
+  revealed_team_ids: number[];
   updated_at: string;
 };
 
@@ -72,7 +72,7 @@ class Store {
   subscribers: Set<Subscriber> = new Set();
   revealLocked = false;
   revealed = false;
-  revealedRanks: Set<number> = new Set();
+  revealedTeamIds: Set<number> = new Set();
 
   private hydrated = false;
   private hydrating: Promise<void> | null = null;
@@ -114,7 +114,7 @@ class Store {
     const reveal = revealRes.data as RevealRow;
     this.revealLocked = reveal.reveal_locked;
     this.revealed = reveal.revealed;
-    this.revealedRanks = new Set(reveal.revealed_ranks);
+    this.revealedTeamIds = new Set(reveal.revealed_team_ids);
 
     this.hydrated = true;
   }
@@ -213,30 +213,30 @@ class Store {
     await this.patchReveal({
       reveal_locked: false,
       revealed: false,
-      revealed_ranks: [],
+      revealed_team_ids: [],
     });
   }
 
-  async revealRank(rank: number): Promise<void> {
-    if (!Number.isInteger(rank) || rank < 1 || rank > TEAMS.length) return;
-    const next = new Set(this.revealedRanks);
-    next.add(rank);
-    const ranks = [...next].sort((a, b) => a - b);
+  async revealTeam(teamId: number): Promise<void> {
+    if (!TEAMS.some((t) => t.id === teamId)) return;
+    const next = new Set(this.revealedTeamIds);
+    next.add(teamId);
+    const ids = [...next].sort((a, b) => a - b);
     await this.patchReveal({
-      revealed_ranks: ranks,
+      revealed_team_ids: ids,
       reveal_locked: true,
-      revealed: ranks.length >= TEAMS.length,
+      revealed: ids.length >= TEAMS.length,
     });
   }
 
-  async unrevealRank(rank: number): Promise<void> {
-    if (!this.revealedRanks.has(rank)) return;
-    const next = new Set(this.revealedRanks);
-    next.delete(rank);
-    const ranks = [...next].sort((a, b) => a - b);
+  async unrevealTeam(teamId: number): Promise<void> {
+    if (!this.revealedTeamIds.has(teamId)) return;
+    const next = new Set(this.revealedTeamIds);
+    next.delete(teamId);
+    const ids = [...next].sort((a, b) => a - b);
     await this.patchReveal({
-      revealed_ranks: ranks,
-      reveal_locked: ranks.length > 0,
+      revealed_team_ids: ids,
+      reveal_locked: ids.length > 0,
       revealed: false,
     });
   }
@@ -253,7 +253,7 @@ class Store {
     const row = data as RevealRow;
     this.revealLocked = row.reveal_locked;
     this.revealed = row.revealed;
-    this.revealedRanks = new Set(row.revealed_ranks);
+    this.revealedTeamIds = new Set(row.revealed_team_ids);
     this.broadcast({ type: "update", state: this.snapshot() });
   }
 
@@ -306,7 +306,7 @@ class Store {
       scoringJudges: this.scoringJudgeCount(),
       revealLocked: this.revealLocked,
       revealed: this.revealed,
-      revealedRanks: [...this.revealedRanks].sort((a, b) => a - b),
+      revealedTeamIds: [...this.revealedTeamIds].sort((a, b) => a - b),
     };
   }
 

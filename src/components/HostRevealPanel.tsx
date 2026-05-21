@@ -7,27 +7,33 @@ import { TEAM_BY_ID, TEAMS } from "@/lib/teams";
 type Props = {
   judgeId: string;
   ranked: Ranked[];
-  revealedRanks: number[];
+  revealedTeamIds: number[];
 };
 
 type PendingOp = "open" | "close";
 
-export function HostRevealPanel({ judgeId, ranked, revealedRanks }: Props) {
+export function HostRevealPanel({ judgeId, ranked, revealedTeamIds }: Props) {
+  // Pending ops are keyed by team id, not rank, so optimistic UI survives
+  // any re-ranking that happens before SSE catches up.
   const [pendingOps, setPendingOps] = useState<Map<number, PendingOp>>(
     new Map(),
   );
   const [resetting, setResetting] = useState(false);
 
-  const serverOpen = new Set(revealedRanks);
-  const ranks = TEAMS.map((_, i) => TEAMS.length - i); // [8,7,6,...,1]
+  const serverOpen = new Set(revealedTeamIds);
+  // Iterate rank slots 8 → 1. For each slot, look up the team currently
+  // sitting there in the (locked) ranking. Reveal targets the team_id of
+  // that row, so the wire format no longer depends on rank numbers.
+  const rankSlots = TEAMS.map((_, i) => TEAMS.length - i); // [8,7,...,1]
   const byRank = new Map<number, Ranked>();
   for (const r of ranked) byRank.set(r.rank, r);
 
-  const effectivelyOpen = (rank: number): boolean => {
-    const op = pendingOps.get(rank);
+  const effectivelyOpen = (teamId: number | undefined): boolean => {
+    if (teamId == null) return false;
+    const op = pendingOps.get(teamId);
     if (op === "open") return true;
     if (op === "close") return false;
-    return serverOpen.has(rank);
+    return serverOpen.has(teamId);
   };
 
   const post = async (body: Record<string, unknown>): Promise<boolean> => {
@@ -56,54 +62,52 @@ export function HostRevealPanel({ judgeId, ranked, revealedRanks }: Props) {
     }
   };
 
-  const toggle = async (rank: number) => {
-    if (pendingOps.has(rank) || resetting) return;
-    const currentlyOpen = effectivelyOpen(rank);
+  const toggle = async (teamId: number) => {
+    if (pendingOps.has(teamId) || resetting) return;
+    const currentlyOpen = effectivelyOpen(teamId);
     const op: PendingOp = currentlyOpen ? "close" : "open";
-    setPendingOps((prev) => new Map(prev).set(rank, op));
+    setPendingOps((prev) => new Map(prev).set(teamId, op));
     const ok = await post(
-      currentlyOpen ? { unrevealRank: rank } : { revealRank: rank },
+      currentlyOpen
+        ? { unrevealTeamId: teamId }
+        : { revealTeamId: teamId },
     );
     if (!ok) {
-      // Failure — drop the optimistic intent so UI snaps back to server truth.
       setPendingOps((prev) => {
         const next = new Map(prev);
-        next.delete(rank);
+        next.delete(teamId);
         return next;
       });
     }
-    // On success, the reconcile effect clears this pending op once the
-    // SSE-driven `revealedRanks` prop matches our intent.
   };
 
   const resetAll = async () => {
-    if (resetting || revealedRanks.length === 0) return;
+    if (resetting || revealedTeamIds.length === 0) return;
     setResetting(true);
     const ok = await post({ reset: true });
     if (!ok) setResetting(false);
   };
 
-  // Reconcile optimistic state with server snapshot once SSE catches up.
   useEffect(() => {
     setPendingOps((prev) => {
       if (prev.size === 0) return prev;
-      const open = new Set(revealedRanks);
+      const open = new Set(revealedTeamIds);
       let changed = false;
       const next = new Map(prev);
-      for (const [rank, op] of prev) {
-        const isNowOpen = open.has(rank);
+      for (const [teamId, op] of prev) {
+        const isNowOpen = open.has(teamId);
         if ((op === "open" && isNowOpen) || (op === "close" && !isNowOpen)) {
-          next.delete(rank);
+          next.delete(teamId);
           changed = true;
         }
       }
       return changed ? next : prev;
     });
-  }, [revealedRanks]);
+  }, [revealedTeamIds]);
 
   useEffect(() => {
-    if (resetting && revealedRanks.length === 0) setResetting(false);
-  }, [revealedRanks, resetting]);
+    if (resetting && revealedTeamIds.length === 0) setResetting(false);
+  }, [revealedTeamIds, resetting]);
 
   return (
     <section className="rounded-[24px] bg-[#151b33] border border-[#ffd66b]/40 p-4 sm:p-5 shadow-[0_0_24px_rgba(255,214,107,0.08)]">
@@ -119,7 +123,7 @@ export function HostRevealPanel({ judgeId, ranked, revealedRanks }: Props) {
         <button
           type="button"
           onClick={resetAll}
-          disabled={revealedRanks.length === 0 || resetting}
+          disabled={revealedTeamIds.length === 0 || resetting}
           className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-[#1f2647] text-[#a8b1d6] hover:bg-[#2a3358] disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {resetting ? "초기화 중..." : "전체 초기화"}
@@ -132,11 +136,12 @@ export function HostRevealPanel({ judgeId, ranked, revealedRanks }: Props) {
       </p>
 
       <ul className="flex flex-col gap-1.5">
-        {ranks.map((rank) => {
+        {rankSlots.map((rank) => {
           const row = byRank.get(rank);
           const team = row ? TEAM_BY_ID.get(row.teamId) : null;
-          const isOpen = effectivelyOpen(rank);
-          const isPending = pendingOps.has(rank);
+          const teamId = team?.id;
+          const isOpen = effectivelyOpen(teamId);
+          const isPending = teamId != null && pendingOps.has(teamId);
           return (
             <li
               key={rank}
@@ -175,7 +180,7 @@ export function HostRevealPanel({ judgeId, ranked, revealedRanks }: Props) {
               </div>
               <button
                 type="button"
-                onClick={() => toggle(rank)}
+                onClick={() => teamId != null && toggle(teamId)}
                 disabled={!team || isPending || resetting}
                 className={[
                   "shrink-0 min-h-[36px] px-3 rounded-full text-xs font-extrabold transition-colors",

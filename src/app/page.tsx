@@ -21,21 +21,17 @@ export default function DashboardPage() {
   );
 
   const isHost = judge?.name === HOST_NAME;
-  const revealedRanks = state?.revealedRanks ?? [];
-  const revealedRankSet = useMemo(
-    () => new Set(revealedRanks),
-    [revealedRanks],
+  const revealedTeamIds = state?.revealedTeamIds ?? [];
+  const revealedTeamIdSet = useMemo(
+    () => new Set(revealedTeamIds),
+    [revealedTeamIds],
   );
   const revealedRows = useMemo<Ranked[]>(
-    () => ranked.filter((r) => revealedRankSet.has(r.rank)),
-    [ranked, revealedRankSet],
+    () => ranked.filter((r) => revealedTeamIdSet.has(r.teamId)),
+    [ranked, revealedTeamIdSet],
   );
-  const revealedTeamIds = useMemo(
-    () => new Set(revealedRows.map((r) => r.teamId)),
-    [revealedRows],
-  );
-  const anyRevealed = revealedRanks.length > 0;
-  const allRevealed = revealedRanks.length >= TEAMS.length;
+  const anyRevealed = revealedTeamIds.length > 0;
+  const allRevealed = revealedTeamIds.length >= TEAMS.length;
 
   return (
     <main className="min-h-dvh bg-base text-text-primary">
@@ -74,7 +70,7 @@ export default function DashboardPage() {
           <section className="flex flex-col gap-2">
             {!allRevealed && (
               <div className="text-[11px] uppercase tracking-[0.25em] text-[#ffd66b]">
-                {revealedRanks.length}/{TEAMS.length} 공개됨 · 남은 순위 공개 중
+                {revealedTeamIds.length}/{TEAMS.length} 공개됨 · 남은 순위 공개 중
               </div>
             )}
             <Leaderboard rows={revealedRows} myTeamId={judge?.teamId ?? null} />
@@ -110,7 +106,7 @@ export default function DashboardPage() {
             {TEAMS.map((team) => {
               const row = ranked.find((r) => r.teamId === team.id);
               const isRevealed =
-                !!row && revealedTeamIds.has(team.id);
+                !!row && revealedTeamIdSet.has(team.id);
               const avg = state?.averages.find((a) => a.teamId === team.id);
               return isRevealed && row ? (
                 <TeamScoreCard
