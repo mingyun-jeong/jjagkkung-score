@@ -1,12 +1,12 @@
 "use client";
 
 import { useMemo } from "react";
+import Link from "next/link";
 import { LoginModal } from "@/components/LoginModal";
-import { JudgeBanner } from "@/components/JudgeBanner";
 import { Leaderboard } from "@/components/Leaderboard";
 import { TeamScoreCard } from "@/components/TeamScoreCard";
 import { PendingTeamCard } from "@/components/PendingTeamCard";
-import { TEAMS, HOST_NAME } from "@/lib/teams";
+import { TEAMS, TEAM_BY_ID, HOST_NAME } from "@/lib/teams";
 import { useJudgeSession } from "@/lib/useJudgeSession";
 import { useDashboardStream } from "@/lib/useDashboardStream";
 import { rankTeams, Ranked } from "@/lib/ranking";
@@ -42,15 +42,7 @@ export default function DashboardPage() {
       />
 
       <div className="mx-auto max-w-6xl px-4 sm:px-6 py-5 sm:py-8 flex flex-col gap-5">
-        <header className="flex flex-col gap-3">
-          {judge && (
-            <JudgeBanner
-              judge={judge}
-              onLogout={logout}
-              showJudgeLink
-              showAdminLink={isHost}
-            />
-          )}
+        <header>
           <div className="flex items-start justify-between flex-wrap gap-3">
             <div>
               <div className="text-xs font-bold tracking-[0.3em] text-[#ffd66b]">
@@ -63,6 +55,43 @@ export default function DashboardPage() {
                 실시간 평균 점수 · 4개 항목 합산 100점 만점
               </p>
             </div>
+            {judge && (
+              <div className="flex items-center gap-2 ml-auto">
+                <div className="text-right leading-tight">
+                  <div className="text-sm font-bold text-[#f5f7ff]">
+                    {judge.name}
+                  </div>
+                  <div className="text-[11px] text-[#a8b1d6]">
+                    {judge.teamId
+                      ? TEAM_BY_ID.get(judge.teamId)?.name
+                      : judge.role === "guest"
+                        ? "게스트"
+                        : (judge.role ?? "운영")}
+                  </div>
+                </div>
+                <Link
+                  href="/judge"
+                  className="min-h-[36px] inline-flex items-center px-3 rounded-xl bg-[#1f2647] border border-[#ff4d9d]/50 text-xs font-bold text-[#f5f7ff] hover:bg-[#2a3358]"
+                >
+                  점수 입력
+                </Link>
+                {isHost && (
+                  <Link
+                    href="/admin"
+                    className="min-h-[36px] inline-flex items-center px-3 rounded-xl bg-[#1f2647] border border-[#ffd66b]/50 text-xs font-bold text-[#f5f7ff] hover:bg-[#2a3358]"
+                  >
+                    관리
+                  </Link>
+                )}
+                <button
+                  type="button"
+                  onClick={logout}
+                  className="min-h-[36px] inline-flex items-center px-2 text-xs font-semibold text-[#a8b1d6] hover:text-[#f5f7ff]"
+                >
+                  로그아웃
+                </button>
+              </div>
+            )}
           </div>
         </header>
 
