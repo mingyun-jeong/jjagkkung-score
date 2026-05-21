@@ -13,7 +13,7 @@ import { rankTeams, Ranked } from "@/lib/ranking";
 
 export default function DashboardPage() {
   const { judge, hydrated, login, loginGuest, logout } = useJudgeSession();
-  const { state } = useDashboardStream();
+  const { state, refresh } = useDashboardStream();
 
   const ranked = useMemo(
     () => (state ? rankTeams(state.averages) : []),
@@ -73,7 +73,11 @@ export default function DashboardPage() {
                 {revealedTeamIds.length}/{TEAMS.length} 공개됨 · 남은 순위 공개 중
               </div>
             )}
-            <Leaderboard rows={revealedRows} myTeamId={judge?.teamId ?? null} />
+            <Leaderboard
+              rows={revealedRows}
+              myTeamId={judge?.teamId ?? null}
+              onRefresh={refresh}
+            />
           </section>
         ) : (
           <section className="rounded-[24px] bg-gradient-to-br from-[#151b33] via-[#1f2647] to-[#151b33] border border-[#2a3358] p-6 sm:p-8 text-center">

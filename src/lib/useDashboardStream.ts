@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { DashboardState } from "./types";
 
 export type StreamStatus = "connecting" | "open" | "closed";
@@ -8,9 +8,15 @@ export type StreamStatus = "connecting" | "open" | "closed";
 export function useDashboardStream(): {
   state: DashboardState | null;
   status: StreamStatus;
+  refresh: () => void;
 } {
   const [state, setState] = useState<DashboardState | null>(null);
   const [status, setStatus] = useState<StreamStatus>("connecting");
+  // Bump to force the SSE effect to teardown + reconnect, which makes the
+  // server re-run ensureHydrated (fresh team_averages from DB) and re-emit
+  // its snapshot.
+  const [nonce, setNonce] = useState(0);
+  const refresh = useCallback(() => setNonce((n) => n + 1), []);
 
   useEffect(() => {
     let es: EventSource | null = null;
@@ -51,7 +57,7 @@ export function useDashboardStream(): {
       if (retryTimer) clearTimeout(retryTimer);
       es?.close();
     };
-  }, []);
+  }, [nonce]);
 
-  return { state, status };
+  return { state, status, refresh };
 }
