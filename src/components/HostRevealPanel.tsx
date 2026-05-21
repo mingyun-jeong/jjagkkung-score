@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Ranked } from "@/lib/ranking";
 import { TEAM_BY_ID, TEAMS } from "@/lib/teams";
 
@@ -64,24 +64,46 @@ export function HostRevealPanel({ judgeId, ranked, revealedRanks }: Props) {
     const ok = await post(
       currentlyOpen ? { unrevealRank: rank } : { revealRank: rank },
     );
-    setPendingOps((prev) => {
-      const next = new Map(prev);
-      next.delete(rank);
-      return next;
-    });
     if (!ok) {
-      // SSE didn't deliver the new truth — nothing to revert beyond clearing the
-      // pending op, since `serverOpen` (from props) reflects whatever the server
-      // actually has. UI snaps back automatically on next render.
+      // Failure — drop the optimistic intent so UI snaps back to server truth.
+      setPendingOps((prev) => {
+        const next = new Map(prev);
+        next.delete(rank);
+        return next;
+      });
     }
+    // On success, the reconcile effect clears this pending op once the
+    // SSE-driven `revealedRanks` prop matches our intent.
   };
 
   const resetAll = async () => {
     if (resetting || revealedRanks.length === 0) return;
     setResetting(true);
-    await post({ reset: true });
-    setResetting(false);
+    const ok = await post({ reset: true });
+    if (!ok) setResetting(false);
   };
+
+  // Reconcile optimistic state with server snapshot once SSE catches up.
+  useEffect(() => {
+    setPendingOps((prev) => {
+      if (prev.size === 0) return prev;
+      const open = new Set(revealedRanks);
+      let changed = false;
+      const next = new Map(prev);
+      for (const [rank, op] of prev) {
+        const isNowOpen = open.has(rank);
+        if ((op === "open" && isNowOpen) || (op === "close" && !isNowOpen)) {
+          next.delete(rank);
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [revealedRanks]);
+
+  useEffect(() => {
+    if (resetting && revealedRanks.length === 0) setResetting(false);
+  }, [revealedRanks, resetting]);
 
   return (
     <section className="rounded-[24px] bg-[#151b33] border border-[#ffd66b]/40 p-4 sm:p-5 shadow-[0_0_24px_rgba(255,214,107,0.08)]">
