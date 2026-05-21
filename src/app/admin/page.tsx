@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { JudgeBanner } from "@/components/JudgeBanner";
 import { LoginModal } from "@/components/LoginModal";
 import { HostRevealPanel } from "@/components/HostRevealPanel";
+import { JudgingStatusPanel } from "@/components/JudgingStatusPanel";
 import { HOST_NAME } from "@/lib/teams";
 import { useJudgeSession } from "@/lib/useJudgeSession";
 import { useDashboardStream } from "@/lib/useDashboardStream";
@@ -64,11 +65,19 @@ export default function AdminPage() {
         </header>
 
         {isHost && judge ? (
-          <HostRevealPanel
-            judgeId={judge.id}
-            ranked={ranked}
-            revealedTeamIds={revealedTeamIds}
-          />
+          <>
+            {state && (
+              <JudgingStatusPanel
+                averages={state.averages}
+                scoringJudgeNames={state.scoringJudgeNames}
+              />
+            )}
+            <HostRevealPanel
+              judgeId={judge.id}
+              ranked={ranked}
+              revealedTeamIds={revealedTeamIds}
+            />
+          </>
         ) : hydrated && judge && !isHost ? (
           <div className="rounded-[24px] bg-[#151b33] border border-[#2a3358] p-8 text-center text-[#a8b1d6]">
             관리 메뉴는 {HOST_NAME}님만 접근할 수 있어요. 대시보드로 이동합니다...

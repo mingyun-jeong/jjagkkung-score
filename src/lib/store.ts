@@ -325,11 +325,16 @@ class Store {
     this.broadcast({ type: "update", state: this.snapshot() });
   }
 
-  scoringJudgeCount(): number {
-    return new Set([...this.scores.values()].map((s) => s.judgeId)).size;
+  scoringJudgeIds(): Set<string> {
+    return new Set([...this.scores.values()].map((s) => s.judgeId));
   }
 
   snapshot(): DashboardState {
+    const scoringIds = this.scoringJudgeIds();
+    const scoringJudgeNames = [...scoringIds]
+      .map((id) => this.judges.get(id)?.name)
+      .filter((n): n is string => !!n)
+      .sort((a, b) => a.localeCompare(b, "ko"));
     return {
       averages: TEAMS.map(
         (t) =>
@@ -344,7 +349,8 @@ class Store {
           },
       ),
       totalJudges: this.judges.size,
-      scoringJudges: this.scoringJudgeCount(),
+      scoringJudges: scoringIds.size,
+      scoringJudgeNames,
       revealLocked: this.revealLocked,
       revealed: this.revealed,
       revealedTeamIds: [...this.revealedTeamIds].sort((a, b) => a - b),

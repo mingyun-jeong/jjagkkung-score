@@ -30,6 +30,8 @@ export type DashboardState = {
   averages: TeamAverage[];
   totalJudges: number;
   scoringJudges: number;
+  /** names of judges who have submitted at least one score */
+  scoringJudgeNames: string[];
   revealLocked: boolean;
   /** flips true once the host has completed the 1위 reveal */
   revealed: boolean;
