@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Ranked } from "@/lib/ranking";
-import { TEAM_BY_ID, TEAMS } from "@/lib/teams";
+import { TEAM_BY_ID } from "@/lib/teams";
 
 type Props = {
   judgeId: string;
@@ -21,15 +21,19 @@ export function HostRevealPanel({ judgeId, ranked, revealedTeamIds }: Props) {
   const [resetting, setResetting] = useState(false);
 
   const serverOpen = new Set(revealedTeamIds);
-  // Iterate rank slots 8 → 1. For each slot, look up the team currently
-  // sitting there in the (locked) ranking. Reveal targets the team_id of
-  // that row, so the wire format no longer depends on rank numbers.
-  const rankSlots = TEAMS.map((_, i) => TEAMS.length - i); // [8,7,...,1]
-  const byRank = new Map<number, Ranked>();
-  for (const r of ranked) byRank.set(r.rank, r);
+  // Iterate one row per team (countdown order: highest rank number first,
+  // ties broken by team id). Iterating real rows instead of rank slots
+  // means ties (which produce empty rank slots like 1,1,1,4) no longer
+  // surface as "데이터 없음" — every team is always present.
+  const orderedRows = useMemo<Ranked[]>(
+    () =>
+      [...ranked].sort(
+        (a, b) => b.rank - a.rank || a.teamId - b.teamId,
+      ),
+    [ranked],
+  );
 
-  const effectivelyOpen = (teamId: number | undefined): boolean => {
-    if (teamId == null) return false;
+  const effectivelyOpen = (teamId: number): boolean => {
     const op = pendingOps.get(teamId);
     if (op === "open") return true;
     if (op === "close") return false;
@@ -136,15 +140,16 @@ export function HostRevealPanel({ judgeId, ranked, revealedTeamIds }: Props) {
       </p>
 
       <ul className="flex flex-col gap-1.5">
-        {rankSlots.map((rank) => {
-          const row = byRank.get(rank);
-          const team = row ? TEAM_BY_ID.get(row.teamId) : null;
-          const teamId = team?.id;
+        {orderedRows.map((row) => {
+          const team = TEAM_BY_ID.get(row.teamId);
+          if (!team) return null;
+          const teamId = team.id;
+          const rank = row.rank;
           const isOpen = effectivelyOpen(teamId);
-          const isPending = teamId != null && pendingOps.has(teamId);
+          const isPending = pendingOps.has(teamId);
           return (
             <li
-              key={rank}
+              key={teamId}
               className={[
                 "flex items-center gap-3 px-3 py-2.5 rounded-2xl border transition-colors",
                 isOpen
@@ -158,12 +163,12 @@ export function HostRevealPanel({ judgeId, ranked, revealedTeamIds }: Props) {
                 </div>
               </div>
               <div className="flex-1 min-w-0">
-                {isOpen && team ? (
+                {isOpen ? (
                   <>
                     <div className="text-sm sm:text-base font-extrabold text-[#f5f7ff]">
                       {team.name}{" "}
                       <span className="text-[11px] font-semibold text-[#a8b1d6]">
-                        · {row?.total.toFixed(1)}점
+                        · {row.total.toFixed(1)}점
                       </span>
                     </div>
                     <div className="text-[11.5px] text-[#a8b1d6] truncate">
@@ -171,23 +176,19 @@ export function HostRevealPanel({ judgeId, ranked, revealedTeamIds }: Props) {
                     </div>
                   </>
                 ) : (
-                  <div className="text-sm text-[#6b739a]">
-                    {team
-                      ? "공개 대기 중"
-                      : "데이터 없음 (점수 미입력)"}
-                  </div>
+                  <div className="text-sm text-[#6b739a]">공개 대기 중</div>
                 )}
               </div>
               <button
                 type="button"
-                onClick={() => teamId != null && toggle(teamId)}
-                disabled={!team || isPending || resetting}
+                onClick={() => toggle(teamId)}
+                disabled={isPending || resetting}
                 className={[
                   "shrink-0 min-h-[36px] px-3 rounded-full text-xs font-extrabold transition-colors",
                   isOpen
                     ? "bg-[#2dce89]/15 text-[#2dce89] border border-[#2dce89]/50 hover:bg-[#2dce89]/25"
                     : "bg-[#1f2647] text-[#f5f7ff] border border-[#2a3358] hover:bg-[#2a3358]",
-                  (!team || isPending) && "opacity-60 cursor-not-allowed",
+                  isPending && "opacity-60 cursor-not-allowed",
                 ].join(" ")}
               >
                 {isPending
