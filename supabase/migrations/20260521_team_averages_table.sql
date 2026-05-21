@@ -5,6 +5,13 @@
 -- drift from the DB on refresh, so the admin would show wrong teams as
 -- revealed. Move both onto one row per team, and let every refresh query
 -- `team_averages where revealed = true` directly.
+
+-- `team_averages` may already exist as a VIEW (an earlier setup computed
+-- averages from `scores` via GROUP BY). Drop it so the same name can host
+-- a real table that the app writes to. CASCADE clears any dependent
+-- objects (no policies expected at this stage).
+drop view if exists team_averages cascade;
+
 create table if not exists team_averages (
   team_id       integer     primary key,
   tech          real        not null default 0,
