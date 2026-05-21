@@ -3,22 +3,19 @@ import {
   DashboardState,
   Judge,
   Score,
-  ServerEvent,
   TeamAverage,
 } from "./types";
 import { ALL_PEOPLE, TEAMS } from "./teams";
 import { supabase } from "./supabase";
 
 /**
- * Supabase-backed store with an in-memory cache + same-process SSE pub/sub.
+ * Supabase-backed store with an in-memory cache.
  *
  * `team_averages` is the single source of truth for per-team aggregated
  * scores and the reveal flag. Writes go through Postgres first; the cache
- * is re-read from `team_averages` at the start of every API call so
- * subsequent broadcasts can never serve a stale snapshot after a refresh.
+ * is re-read from `team_averages` at the start of every API call (via
+ * ensureHydrated) so the polled /api/snapshot endpoint always reflects DB.
  */
-
-type Subscriber = (event: ServerEvent) => void;
 
 type JudgeRow = {
   id: string;
@@ -90,7 +87,6 @@ class Store {
   scores: Map<string, Score> = new Map(); // key: `${judgeId}:${teamId}`
   averages: Map<number, TeamAverage> = new Map();
   revealedTeamIds: Set<number> = new Set();
-  subscribers: Set<Subscriber> = new Set();
 
   // Derived from revealedTeamIds — kept off the DB to avoid a redundant write
   // on every reveal toggle.
@@ -200,7 +196,6 @@ class Store {
       if (!error) {
         const judge = rowToJudge(data as JudgeRow);
         this.judges.set(judge.id, judge);
-        this.broadcast({ type: "update", state: this.snapshot() });
         return judge;
       }
       // 23505 = unique_violation → retry with a new random name
@@ -243,7 +238,6 @@ class Store {
     const score = rowToScore(data as ScoreRow);
     this.scores.set(`${score.judgeId}:${score.teamId}`, score);
     await this.recomputeTeamAverage(score.teamId);
-    this.broadcast({ type: "update", state: this.snapshot() });
     return score;
   }
 
@@ -298,7 +292,6 @@ class Store {
       .neq("team_id", -1);
     if (error) throw error;
     this.revealedTeamIds = new Set();
-    this.broadcast({ type: "update", state: this.snapshot() });
   }
 
   async revealTeam(teamId: number): Promise<void> {
@@ -310,7 +303,6 @@ class Store {
       .eq("team_id", teamId);
     if (error) throw error;
     this.revealedTeamIds.add(teamId);
-    this.broadcast({ type: "update", state: this.snapshot() });
   }
 
   async unrevealTeam(teamId: number): Promise<void> {
@@ -322,7 +314,6 @@ class Store {
       .eq("team_id", teamId);
     if (error) throw error;
     this.revealedTeamIds.delete(teamId);
-    this.broadcast({ type: "update", state: this.snapshot() });
   }
 
   scoringJudgeIds(): Set<string> {
@@ -355,23 +346,6 @@ class Store {
       revealed: this.revealed,
       revealedTeamIds: [...this.revealedTeamIds].sort((a, b) => a - b),
     };
-  }
-
-  subscribe(fn: Subscriber): () => void {
-    this.subscribers.add(fn);
-    return () => {
-      this.subscribers.delete(fn);
-    };
-  }
-
-  broadcast(event: ServerEvent) {
-    for (const sub of this.subscribers) {
-      try {
-        sub(event);
-      } catch {
-        /* best effort */
-      }
-    }
   }
 }
 

@@ -39,10 +39,6 @@ export type DashboardState = {
   revealedTeamIds: number[];
 };
 
-export type ServerEvent =
-  | { type: "snapshot"; state: DashboardState }
-  | { type: "update"; state: DashboardState };
-
 export const SCORE_MAX = {
   tech: 30,
   bm: 30,

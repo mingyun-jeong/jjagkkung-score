@@ -1,10 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { DashboardState } from "./types";
+
+const POLL_INTERVAL_MS = 1000;
 
 export type StreamStatus = "connecting" | "open" | "closed";
 
+/**
+ * Polls /api/snapshot at 1Hz. (Was SSE; switched to polling because reverse
+ * proxies and HMR kept breaking long-lived connections.) `refresh()` triggers
+ * an immediate fetch outside the interval.
+ */
 export function useDashboardStream(): {
   state: DashboardState | null;
   status: StreamStatus;
@@ -12,52 +19,33 @@ export function useDashboardStream(): {
 } {
   const [state, setState] = useState<DashboardState | null>(null);
   const [status, setStatus] = useState<StreamStatus>("connecting");
-  // Bump to force the SSE effect to teardown + reconnect, which makes the
-  // server re-run ensureHydrated (fresh team_averages from DB) and re-emit
-  // its snapshot.
-  const [nonce, setNonce] = useState(0);
-  const refresh = useCallback(() => setNonce((n) => n + 1), []);
+  // Guard against overlapping requests if the server is slow.
+  const inFlightRef = useRef(false);
+
+  const fetchOnce = useCallback(async () => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+    try {
+      const res = await fetch("/api/snapshot", { cache: "no-store" });
+      if (!res.ok) {
+        setStatus("closed");
+        return;
+      }
+      const data = (await res.json()) as DashboardState;
+      setState(data);
+      setStatus("open");
+    } catch {
+      setStatus("closed");
+    } finally {
+      inFlightRef.current = false;
+    }
+  }, []);
 
   useEffect(() => {
-    let es: EventSource | null = null;
-    let retryTimer: ReturnType<typeof setTimeout> | null = null;
-    let cancelled = false;
+    void fetchOnce();
+    const id = setInterval(() => void fetchOnce(), POLL_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [fetchOnce]);
 
-    const connect = () => {
-      es = new EventSource("/api/stream");
-      setStatus("connecting");
-
-      es.onopen = () => {
-        if (cancelled) return;
-        setStatus("open");
-      };
-      es.onmessage = (ev) => {
-        if (cancelled) return;
-        try {
-          const parsed = JSON.parse(ev.data) as {
-            type: "snapshot" | "update";
-            state: DashboardState;
-          };
-          if (parsed.state) setState(parsed.state);
-        } catch {
-          /* ignore malformed frames */
-        }
-      };
-      es.onerror = () => {
-        if (cancelled) return;
-        setStatus("closed");
-        es?.close();
-        retryTimer = setTimeout(connect, 1500);
-      };
-    };
-
-    connect();
-    return () => {
-      cancelled = true;
-      if (retryTimer) clearTimeout(retryTimer);
-      es?.close();
-    };
-  }, [nonce]);
-
-  return { state, status, refresh };
+  return { state, status, refresh: fetchOnce };
 }
