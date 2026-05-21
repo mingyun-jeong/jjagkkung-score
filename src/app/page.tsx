@@ -43,6 +43,14 @@ export default function DashboardPage() {
 
       <div className="mx-auto max-w-6xl px-4 sm:px-6 py-5 sm:py-8 flex flex-col gap-5">
         <header className="flex flex-col gap-3">
+          {judge && (
+            <JudgeBanner
+              judge={judge}
+              onLogout={logout}
+              showJudgeLink
+              showAdminLink={isHost}
+            />
+          )}
           <div className="flex items-start justify-between flex-wrap gap-3">
             <div>
               <div className="text-xs font-bold tracking-[0.3em] text-[#ffd66b]">
@@ -56,14 +64,6 @@ export default function DashboardPage() {
               </p>
             </div>
           </div>
-          {judge && (
-            <JudgeBanner
-              judge={judge}
-              onLogout={logout}
-              showJudgeLink
-              showAdminLink={isHost}
-            />
-          )}
         </header>
 
         {anyRevealed ? (
