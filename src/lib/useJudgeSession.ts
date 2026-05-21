@@ -18,17 +18,31 @@ export function useJudgeSession(): JudgeSession {
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(KEY);
-      if (raw) {
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const raw = localStorage.getItem(KEY);
+        if (!raw) return;
         const parsed = JSON.parse(raw) as Judge;
-        setJudge(parsed);
+        // Validate against server — DB resets / stale sessions get cleared here.
+        const res = await fetch(`/api/judges?id=${encodeURIComponent(parsed.id)}`);
+        if (cancelled) return;
+        if (res.ok) {
+          const data = (await res.json()) as { judge: Judge };
+          setJudge(data.judge);
+        } else {
+          localStorage.removeItem(KEY);
+        }
+      } catch {
+        // ignore corrupt storage / network errors — treat as unauthenticated
+      } finally {
+        if (!cancelled) setHydrated(true);
       }
-    } catch {
-      // ignore corrupt storage
-    } finally {
-      setHydrated(true);
-    }
+    };
+    run();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const login = useCallback(async (name: string) => {

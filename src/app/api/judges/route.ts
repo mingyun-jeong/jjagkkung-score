@@ -4,6 +4,19 @@ import { ALL_PEOPLE, store } from "@/lib/store";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
+export async function GET(req: NextRequest) {
+  const id = req.nextUrl.searchParams.get("id");
+  if (!id) {
+    return NextResponse.json({ error: "ID_REQUIRED" }, { status: 400 });
+  }
+  await store.ensureHydrated();
+  const judge = store.getJudge(id);
+  if (!judge) {
+    return NextResponse.json({ error: "UNKNOWN_JUDGE" }, { status: 404 });
+  }
+  return NextResponse.json({ judge });
+}
+
 export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as {
     name?: string;
