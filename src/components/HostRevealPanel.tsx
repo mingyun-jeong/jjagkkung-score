@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { Ranked } from "@/lib/ranking";
 import { TEAM_BY_ID, TEAMS } from "@/lib/teams";
 
@@ -9,13 +10,27 @@ type Props = {
   revealedRanks: number[];
 };
 
+type PendingOp = "open" | "close";
+
 export function HostRevealPanel({ judgeId, ranked, revealedRanks }: Props) {
-  const revealedSet = new Set(revealedRanks);
+  const [pendingOps, setPendingOps] = useState<Map<number, PendingOp>>(
+    new Map(),
+  );
+  const [resetting, setResetting] = useState(false);
+
+  const serverOpen = new Set(revealedRanks);
   const ranks = TEAMS.map((_, i) => TEAMS.length - i); // [8,7,6,...,1]
   const byRank = new Map<number, Ranked>();
   for (const r of ranked) byRank.set(r.rank, r);
 
-  const post = async (body: Record<string, unknown>) => {
+  const effectivelyOpen = (rank: number): boolean => {
+    const op = pendingOps.get(rank);
+    if (op === "open") return true;
+    if (op === "close") return false;
+    return serverOpen.has(rank);
+  };
+
+  const post = async (body: Record<string, unknown>): Promise<boolean> => {
     try {
       const res = await fetch("/api/reveal", {
         method: "POST",
@@ -23,20 +38,49 @@ export function HostRevealPanel({ judgeId, ranked, revealedRanks }: Props) {
         body: JSON.stringify({ judgeId, ...body }),
       });
       if (res.status === 403 || res.status === 404) {
-        // stale session (e.g., DB reset wiped this judge id) — recover
         localStorage.removeItem("jjagkkung.judge.v1");
         alert(
           "세션이 만료되어 다시 로그인해야 해요. 페이지를 새로고침합니다.",
         );
         window.location.reload();
-        return;
+        return false;
       }
       if (!res.ok) {
         alert(`공개 실패 (HTTP ${res.status}). 다시 시도해 주세요.`);
+        return false;
       }
+      return true;
     } catch {
       alert("네트워크 오류로 공개에 실패했어요. 다시 시도해 주세요.");
+      return false;
     }
+  };
+
+  const toggle = async (rank: number) => {
+    if (pendingOps.has(rank) || resetting) return;
+    const currentlyOpen = effectivelyOpen(rank);
+    const op: PendingOp = currentlyOpen ? "close" : "open";
+    setPendingOps((prev) => new Map(prev).set(rank, op));
+    const ok = await post(
+      currentlyOpen ? { unrevealRank: rank } : { revealRank: rank },
+    );
+    setPendingOps((prev) => {
+      const next = new Map(prev);
+      next.delete(rank);
+      return next;
+    });
+    if (!ok) {
+      // SSE didn't deliver the new truth — nothing to revert beyond clearing the
+      // pending op, since `serverOpen` (from props) reflects whatever the server
+      // actually has. UI snaps back automatically on next render.
+    }
+  };
+
+  const resetAll = async () => {
+    if (resetting || revealedRanks.length === 0) return;
+    setResetting(true);
+    await post({ reset: true });
+    setResetting(false);
   };
 
   return (
@@ -52,11 +96,11 @@ export function HostRevealPanel({ judgeId, ranked, revealedRanks }: Props) {
         </div>
         <button
           type="button"
-          onClick={() => post({ reset: true })}
-          disabled={revealedRanks.length === 0}
+          onClick={resetAll}
+          disabled={revealedRanks.length === 0 || resetting}
           className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-[#1f2647] text-[#a8b1d6] hover:bg-[#2a3358] disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          전체 초기화
+          {resetting ? "초기화 중..." : "전체 초기화"}
         </button>
       </div>
 
@@ -69,7 +113,8 @@ export function HostRevealPanel({ judgeId, ranked, revealedRanks }: Props) {
         {ranks.map((rank) => {
           const row = byRank.get(rank);
           const team = row ? TEAM_BY_ID.get(row.teamId) : null;
-          const isOpen = revealedSet.has(rank);
+          const isOpen = effectivelyOpen(rank);
+          const isPending = pendingOps.has(rank);
           return (
             <li
               key={rank}
@@ -108,19 +153,23 @@ export function HostRevealPanel({ judgeId, ranked, revealedRanks }: Props) {
               </div>
               <button
                 type="button"
-                onClick={() =>
-                  post(isOpen ? { unrevealRank: rank } : { revealRank: rank })
-                }
-                disabled={!team}
+                onClick={() => toggle(rank)}
+                disabled={!team || isPending || resetting}
                 className={[
                   "shrink-0 min-h-[36px] px-3 rounded-full text-xs font-extrabold transition-colors",
                   isOpen
                     ? "bg-[#2dce89]/15 text-[#2dce89] border border-[#2dce89]/50 hover:bg-[#2dce89]/25"
                     : "bg-[#1f2647] text-[#f5f7ff] border border-[#2a3358] hover:bg-[#2a3358]",
-                  !team && "opacity-40 cursor-not-allowed",
+                  (!team || isPending) && "opacity-60 cursor-not-allowed",
                 ].join(" ")}
               >
-                {isOpen ? "✓ 공개됨" : "공개하기"}
+                {isPending
+                  ? isOpen
+                    ? "공개 중..."
+                    : "숨기는 중..."
+                  : isOpen
+                    ? "✓ 공개됨"
+                    : "공개하기"}
               </button>
             </li>
           );

@@ -153,7 +153,7 @@ export function ScoreInputCard({
             value={scores[c.field]}
             max={c.max}
             onChange={(v) => setField(c.field, v)}
-            disabled={locked}
+            disabled={locked || isSubmitted}
           />
         ))}
       </div>
