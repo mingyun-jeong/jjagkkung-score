@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DashboardState } from "./types";
 
-const POLL_INTERVAL_MS = 1000;
+const POLL_INTERVAL_MS = 2000;
 
 export type StreamStatus = "connecting" | "open" | "closed";
 
 /**
- * Polls /api/snapshot at 1Hz. (Was SSE; switched to polling because reverse
+ * Polls /api/snapshot every 2s. (Was SSE; switched to polling because reverse
  * proxies and HMR kept breaking long-lived connections.) `refresh()` triggers
  * an immediate fetch outside the interval.
  */
