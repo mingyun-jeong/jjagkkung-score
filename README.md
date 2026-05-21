@@ -1,36 +1,67 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 짝꿍톤 스코어보드
 
-## Getting Started
+더빙실 짝꿍톤 행사용 실시간 점수 대시보드. 8개 조의 점수를 다중 심사위원이 동시에 입력하고, 평균으로 순위를 산정해 3위 → 2위 → 1위 순으로 발표합니다.
 
-First, run the development server:
+## 빠른 실행
 
 ```bash
-npm run dev
+npm install
+npm run build
+npm start            # 기본 3000번 포트
 # or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npx next start -p 3030   # 다른 포트로
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+같은 네트워크의 다른 기기에서 접속하려면 호스트 IP로 들어옵니다.
+예: `http://<host-ip>:3030/`
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 페이지 구조
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- `/` — 대시보드 (리더보드 + 8조 카드 + 순위 발표 버튼)
+- `/judge` — 점수 입력 (4개 항목 슬라이더 × 8조)
+- `/api/judges` (POST) — 로그인/upsert
+- `/api/scores` (GET, POST) — 점수 조회/저장
+- `/api/stream` (GET) — SSE 실시간 스트림
+- `/api/reveal` (POST) — 발표 잠금 토글
 
-## Learn More
+## 주요 흐름
 
-To learn more about Next.js, take a look at the following resources:
+1. 접속하면 LoginModal 자동 오픈 → 18명 중 본인 선택 (8조 멤버 16명 + 운영진 권택순/정민균)
+2. 참가자: 본인 조 카드는 자동 비활성, 다른 7개 조에 점수 입력
+3. 운영진: 8개 조 모두 점수 입력 가능
+4. 운영진만 "🏆 순위 발표" 버튼 노출 → 클릭 시 점수 입력 잠금 + 3위→2위→1위 순으로 공개 (빵빠레 + BGM + 상품 뱃지)
+5. 모달 닫기 → 잠금 해제, 다시 입력 가능
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 점수 기준 (총 100점)
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| 항목 | 만점 |
+|---|---|
+| 기술 활용도 | 30 |
+| 사업성/BM | 30 |
+| 완성도 | 20 |
+| 협업/발표 | 20 |
 
-## Deploy on Vercel
+## 상품 (조별 지급)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+- 1위: 신세계 상품권 15만원 (5만원권 3장)
+- 2위: 신세계 상품권 10만원 (5만원권 2장)
+- 3위: 신세계 상품권 5만원 (5만원권 1장)
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## BGM 교체
+
+`public/bgm/runner-up.mp3` (3·2위) 와 `public/bgm/winner.mp3` (1위)를 같은 파일명으로 교체하면 됩니다. 파일이 없어도 발표 자체는 정상 작동합니다 (오디오만 무음).
+
+## 데이터 저장
+
+서버 인메모리 (`Map` + Node 글로벌 싱글톤). **서버를 재시작하면 모든 점수가 초기화됩니다.** 행사 중 재시작 금지.
+
+영구 저장이 필요하면 `src/lib/store.ts`의 `Store` 클래스를 Supabase/Postgres로 교체하면 됩니다.
+
+## 기술 스택
+
+- Next.js 16 (App Router, Turbopack)
+- TypeScript
+- Tailwind CSS v4 (Pretendard 폰트)
+- Framer Motion (애니메이션)
+- canvas-confetti (빵빠레)
+- Node.js SSE (실시간 동기화, 외부 의존성 없음)
