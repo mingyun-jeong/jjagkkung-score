@@ -15,14 +15,29 @@ export function HostRevealPanel({ judgeId, ranked, revealedRanks }: Props) {
   const byRank = new Map<number, Ranked>();
   for (const r of ranked) byRank.set(r.rank, r);
 
-  const post = (body: Record<string, unknown>) =>
-    fetch("/api/reveal", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ judgeId, ...body }),
-    }).catch(() => {
-      /* best-effort */
-    });
+  const post = async (body: Record<string, unknown>) => {
+    try {
+      const res = await fetch("/api/reveal", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ judgeId, ...body }),
+      });
+      if (res.status === 403 || res.status === 404) {
+        // stale session (e.g., DB reset wiped this judge id) — recover
+        localStorage.removeItem("jjagkkung.judge.v1");
+        alert(
+          "세션이 만료되어 다시 로그인해야 해요. 페이지를 새로고침합니다.",
+        );
+        window.location.reload();
+        return;
+      }
+      if (!res.ok) {
+        alert(`공개 실패 (HTTP ${res.status}). 다시 시도해 주세요.`);
+      }
+    } catch {
+      alert("네트워크 오류로 공개에 실패했어요. 다시 시도해 주세요.");
+    }
+  };
 
   return (
     <section className="rounded-[24px] bg-[#151b33] border border-[#ffd66b]/40 p-4 sm:p-5 shadow-[0_0_24px_rgba(255,214,107,0.08)]">
