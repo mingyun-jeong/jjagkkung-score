@@ -91,9 +91,8 @@ export function JudgeBanner({
           type="button"
           onClick={onLogout}
           className="min-h-[40px] inline-flex items-center px-3 rounded-xl bg-transparent text-sm font-semibold text-[#a8b1d6] hover:text-[#f5f7ff]"
-          aria-label="로그아웃"
         >
-          ⏻
+          로그아웃
         </button>
       </div>
     </div>
