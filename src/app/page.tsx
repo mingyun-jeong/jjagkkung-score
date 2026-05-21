@@ -1,15 +1,18 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { LoginModal } from "@/components/LoginModal";
 import { Leaderboard } from "@/components/Leaderboard";
 import { TeamScoreCard } from "@/components/TeamScoreCard";
 import { PendingTeamCard } from "@/components/PendingTeamCard";
+import { PodiumCelebration } from "@/components/PodiumCelebration";
 import { TEAMS, TEAM_BY_ID, HOST_NAME } from "@/lib/teams";
 import { useJudgeSession } from "@/lib/useJudgeSession";
 import { useDashboardStream } from "@/lib/useDashboardStream";
 import { rankTeams, Ranked } from "@/lib/ranking";
+
+type PodiumQueueItem = { rank: 1 | 2 | 3; teamId: number };
 
 export default function DashboardPage() {
   const { judge, hydrated, login, loginGuest, logout } = useJudgeSession();
@@ -33,6 +36,61 @@ export default function DashboardPage() {
   const anyRevealed = revealedTeamIds.length > 0;
   const allRevealed = revealedTeamIds.length >= TEAMS.length;
 
+  // Top-3 reveal celebration: detect newly revealed teams whose current rank
+  // is 1/2/3 and queue a fullscreen burst. Already-revealed top-3 at first
+  // load are silently marked celebrated so a page refresh never re-triggers.
+  const rankByTeamId = useMemo(() => {
+    const m = new Map<number, Ranked>();
+    for (const r of ranked) m.set(r.teamId, r);
+    return m;
+  }, [ranked]);
+  const celebratedRef = useRef<Set<number>>(new Set());
+  const prevRevealedRef = useRef<Set<number>>(new Set());
+  const initializedRef = useRef(false);
+  const [podiumQueue, setPodiumQueue] = useState<PodiumQueueItem[]>([]);
+
+  useEffect(() => {
+    if (!state) return;
+    const current = new Set(state.revealedTeamIds);
+
+    if (!initializedRef.current) {
+      for (const id of current) {
+        const r = rankByTeamId.get(id);
+        if (r && r.rank <= 3) celebratedRef.current.add(id);
+      }
+      prevRevealedRef.current = current;
+      initializedRef.current = true;
+      return;
+    }
+
+    // Unreveal: drop from celebrated so a re-reveal can fire again.
+    for (const id of prevRevealedRef.current) {
+      if (!current.has(id)) celebratedRef.current.delete(id);
+    }
+
+    // Newly revealed top-3 → queue.
+    const additions: PodiumQueueItem[] = [];
+    for (const id of current) {
+      if (prevRevealedRef.current.has(id)) continue;
+      if (celebratedRef.current.has(id)) continue;
+      const r = rankByTeamId.get(id);
+      if (r && r.rank <= 3) {
+        celebratedRef.current.add(id);
+        additions.push({ rank: r.rank as 1 | 2 | 3, teamId: id });
+      }
+    }
+    if (additions.length) {
+      // Show worst-rank-first (3 → 2 → 1) so the climax lands last.
+      additions.sort((a, b) => b.rank - a.rank);
+      setPodiumQueue((q) => [...q, ...additions]);
+    }
+    prevRevealedRef.current = current;
+  }, [state, rankByTeamId]);
+
+  const podiumHead = podiumQueue[0] ?? null;
+  const podiumTeam = podiumHead ? TEAM_BY_ID.get(podiumHead.teamId) : null;
+  const podiumRanked = podiumHead ? rankByTeamId.get(podiumHead.teamId) : null;
+
   return (
     <main className="min-h-dvh bg-base text-text-primary">
       <LoginModal
@@ -40,6 +98,16 @@ export default function DashboardPage() {
         onSubmit={(name) => login(name)}
         onGuest={() => loginGuest()}
       />
+
+      {podiumHead && podiumTeam && podiumRanked && (
+        <PodiumCelebration
+          open
+          rank={podiumHead.rank}
+          team={podiumTeam}
+          total={podiumRanked.total}
+          onClose={() => setPodiumQueue((q) => q.slice(1))}
+        />
+      )}
 
       <div className="mx-auto max-w-6xl px-4 sm:px-6 py-5 sm:py-8 flex flex-col gap-5">
         <header>
