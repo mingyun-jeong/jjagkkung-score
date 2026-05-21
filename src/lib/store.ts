@@ -11,8 +11,11 @@ import { supabase } from "./supabase";
 
 /**
  * Supabase-backed store with an in-memory cache + same-process SSE pub/sub.
- * Mutations write to Postgres first, then update the cache and broadcast.
- * The cache is hydrated lazily (and re-hydrated on HMR / cold start).
+ *
+ * `team_averages` is the single source of truth for per-team aggregated
+ * scores and the reveal flag. Writes go through Postgres first; the cache
+ * is re-read from `team_averages` at the start of every API call so
+ * subsequent broadcasts can never serve a stale snapshot after a refresh.
  */
 
 type Subscriber = (event: ServerEvent) => void;
@@ -35,8 +38,14 @@ type ScoreRow = {
   updated_at: string;
 };
 
-type TeamRevealRow = {
+type TeamAverageRow = {
   team_id: number;
+  tech: number;
+  bm: number;
+  completeness: number;
+  collab: number;
+  total: number;
+  judge_count: number;
   revealed: boolean;
   revealed_at: string | null;
 };
@@ -64,13 +73,27 @@ const rowToScore = (r: ScoreRow): Score => ({
   updatedAt: Date.parse(r.updated_at),
 });
 
+const rowToAverage = (r: TeamAverageRow): TeamAverage => ({
+  teamId: r.team_id,
+  tech: r.tech,
+  bm: r.bm,
+  completeness: r.completeness,
+  collab: r.collab,
+  total: r.total,
+  judgeCount: r.judge_count,
+});
+
+const round1 = (n: number) => Math.round(n * 10) / 10;
+
 class Store {
   judges: Map<string, Judge> = new Map();
   scores: Map<string, Score> = new Map(); // key: `${judgeId}:${teamId}`
-  subscribers: Set<Subscriber> = new Set();
+  averages: Map<number, TeamAverage> = new Map();
   revealedTeamIds: Set<number> = new Set();
+  subscribers: Set<Subscriber> = new Set();
 
-  // Derived from revealedTeamIds — no separate UPDATE needed per reveal.
+  // Derived from revealedTeamIds — kept off the DB to avoid a redundant write
+  // on every reveal toggle.
   get revealLocked(): boolean {
     return this.revealedTeamIds.size > 0;
   }
@@ -78,30 +101,40 @@ class Store {
     return this.revealedTeamIds.size >= TEAMS.length;
   }
 
-  private hydrated = false;
+  private hydratedOnce = false;
   private hydrating: Promise<void> | null = null;
 
+  /**
+   * First call does a full hydrate (judges + scores + averages). Subsequent
+   * calls just refresh `team_averages` from the DB so a refresh of the
+   * leaderboard always reflects the column truth (no cache drift).
+   */
   async ensureHydrated(): Promise<void> {
-    if (this.hydrated) return;
-    if (this.hydrating) return this.hydrating;
-    this.hydrating = this.hydrate();
-    try {
-      await this.hydrating;
-    } finally {
-      this.hydrating = null;
+    if (!this.hydratedOnce) {
+      if (this.hydrating) {
+        await this.hydrating;
+      } else {
+        this.hydrating = this.hydrate();
+        try {
+          await this.hydrating;
+        } finally {
+          this.hydrating = null;
+        }
+      }
     }
+    await this.refreshAverages();
   }
 
   private async hydrate(): Promise<void> {
     const sb = supabase();
-    const [judgesRes, scoresRes, teamRevealsRes] = await Promise.all([
+    const [judgesRes, scoresRes, avgsRes] = await Promise.all([
       sb.from("judges").select("*"),
       sb.from("scores").select("*"),
-      sb.from("team_reveals").select("*"),
+      sb.from("team_averages").select("*"),
     ]);
     if (judgesRes.error) throw judgesRes.error;
     if (scoresRes.error) throw scoresRes.error;
-    if (teamRevealsRes.error) throw teamRevealsRes.error;
+    if (avgsRes.error) throw avgsRes.error;
 
     this.judges.clear();
     for (const row of judgesRes.data as JudgeRow[]) {
@@ -115,13 +148,24 @@ class Store {
       this.scores.set(`${s.judgeId}:${s.teamId}`, s);
     }
 
-    this.revealedTeamIds = new Set(
-      (teamRevealsRes.data as TeamRevealRow[])
-        .filter((r) => r.revealed)
-        .map((r) => r.team_id),
-    );
+    this.applyAverages(avgsRes.data as TeamAverageRow[]);
+    this.hydratedOnce = true;
+  }
 
-    this.hydrated = true;
+  private async refreshAverages(): Promise<void> {
+    const sb = supabase();
+    const { data, error } = await sb.from("team_averages").select("*");
+    if (error) throw error;
+    this.applyAverages(data as TeamAverageRow[]);
+  }
+
+  private applyAverages(rows: TeamAverageRow[]): void {
+    this.averages.clear();
+    this.revealedTeamIds = new Set();
+    for (const r of rows) {
+      this.averages.set(r.team_id, rowToAverage(r));
+      if (r.revealed) this.revealedTeamIds.add(r.team_id);
+    }
   }
 
   async upsertJudgeByName(
@@ -198,6 +242,7 @@ class Store {
     }
     const score = rowToScore(data as ScoreRow);
     this.scores.set(`${score.judgeId}:${score.teamId}`, score);
+    await this.recomputeTeamAverage(score.teamId);
     this.broadcast({ type: "update", state: this.snapshot() });
     return score;
   }
@@ -206,12 +251,49 @@ class Store {
     return [...this.scores.values()].filter((s) => s.judgeId === judgeId);
   }
 
+  private async recomputeTeamAverage(teamId: number): Promise<void> {
+    const list = [...this.scores.values()].filter((s) => s.teamId === teamId);
+    const judgeCount = list.length;
+    const avg = (pick: (s: Score) => number) =>
+      judgeCount === 0
+        ? 0
+        : round1(list.reduce((sum, s) => sum + pick(s), 0) / judgeCount);
+    const tech = avg((s) => s.tech);
+    const bm = avg((s) => s.bm);
+    const completeness = avg((s) => s.completeness);
+    const collab = avg((s) => s.collab);
+    const total = round1(tech + bm + completeness + collab);
+
+    const sb = supabase();
+    const { error } = await sb
+      .from("team_averages")
+      .update({
+        tech,
+        bm,
+        completeness,
+        collab,
+        total,
+        judge_count: judgeCount,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("team_id", teamId);
+    if (error) throw error;
+    this.averages.set(teamId, {
+      teamId,
+      tech,
+      bm,
+      completeness,
+      collab,
+      total,
+      judgeCount,
+    });
+  }
+
   async resetReveal(): Promise<void> {
     const sb = supabase();
-    // Flip every team_reveals row back to false in a single UPDATE.
     // `neq("team_id", -1)` matches all rows (PostgREST requires a filter).
     const { error } = await sb
-      .from("team_reveals")
+      .from("team_averages")
       .update({ revealed: false, revealed_at: null })
       .neq("team_id", -1);
     if (error) throw error;
@@ -223,7 +305,7 @@ class Store {
     if (!TEAMS.some((t) => t.id === teamId)) return;
     const sb = supabase();
     const { error } = await sb
-      .from("team_reveals")
+      .from("team_averages")
       .update({ revealed: true, revealed_at: new Date().toISOString() })
       .eq("team_id", teamId);
     if (error) throw error;
@@ -235,50 +317,12 @@ class Store {
     if (!this.revealedTeamIds.has(teamId)) return;
     const sb = supabase();
     const { error } = await sb
-      .from("team_reveals")
+      .from("team_averages")
       .update({ revealed: false, revealed_at: null })
       .eq("team_id", teamId);
     if (error) throw error;
     this.revealedTeamIds.delete(teamId);
     this.broadcast({ type: "update", state: this.snapshot() });
-  }
-
-  computeAverages(): TeamAverage[] {
-    const buckets = new Map<number, Score[]>();
-    for (const t of TEAMS) buckets.set(t.id, []);
-    for (const score of this.scores.values()) {
-      buckets.get(score.teamId)?.push(score);
-    }
-    return TEAMS.map<TeamAverage>((t) => {
-      const list = buckets.get(t.id) ?? [];
-      if (list.length === 0) {
-        return {
-          teamId: t.id,
-          tech: 0,
-          bm: 0,
-          completeness: 0,
-          collab: 0,
-          total: 0,
-          judgeCount: 0,
-        };
-      }
-      const avg = (arr: number[]) =>
-        Math.round((arr.reduce((a, b) => a + b, 0) / arr.length) * 10) / 10;
-      const tech = avg(list.map((s) => s.tech));
-      const bm = avg(list.map((s) => s.bm));
-      const completeness = avg(list.map((s) => s.completeness));
-      const collab = avg(list.map((s) => s.collab));
-      const total = Math.round((tech + bm + completeness + collab) * 10) / 10;
-      return {
-        teamId: t.id,
-        tech,
-        bm,
-        completeness,
-        collab,
-        total,
-        judgeCount: list.length,
-      };
-    });
   }
 
   scoringJudgeCount(): number {
@@ -287,7 +331,18 @@ class Store {
 
   snapshot(): DashboardState {
     return {
-      averages: this.computeAverages(),
+      averages: TEAMS.map(
+        (t) =>
+          this.averages.get(t.id) ?? {
+            teamId: t.id,
+            tech: 0,
+            bm: 0,
+            completeness: 0,
+            collab: 0,
+            total: 0,
+            judgeCount: 0,
+          },
+      ),
       totalJudges: this.judges.size,
       scoringJudges: this.scoringJudgeCount(),
       revealLocked: this.revealLocked,
