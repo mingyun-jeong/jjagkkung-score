@@ -35,13 +35,6 @@ type ScoreRow = {
   updated_at: string;
 };
 
-type RevealRow = {
-  id: number;
-  reveal_locked: boolean;
-  revealed: boolean;
-  updated_at: string;
-};
-
 type TeamRevealRow = {
   team_id: number;
   revealed: boolean;
@@ -75,9 +68,15 @@ class Store {
   judges: Map<string, Judge> = new Map();
   scores: Map<string, Score> = new Map(); // key: `${judgeId}:${teamId}`
   subscribers: Set<Subscriber> = new Set();
-  revealLocked = false;
-  revealed = false;
   revealedTeamIds: Set<number> = new Set();
+
+  // Derived from revealedTeamIds — no separate UPDATE needed per reveal.
+  get revealLocked(): boolean {
+    return this.revealedTeamIds.size > 0;
+  }
+  get revealed(): boolean {
+    return this.revealedTeamIds.size >= TEAMS.length;
+  }
 
   private hydrated = false;
   private hydrating: Promise<void> | null = null;
@@ -95,15 +94,13 @@ class Store {
 
   private async hydrate(): Promise<void> {
     const sb = supabase();
-    const [judgesRes, scoresRes, revealRes, teamRevealsRes] = await Promise.all([
+    const [judgesRes, scoresRes, teamRevealsRes] = await Promise.all([
       sb.from("judges").select("*"),
       sb.from("scores").select("*"),
-      sb.from("reveal_state").select("*").eq("id", 1).single(),
       sb.from("team_reveals").select("*"),
     ]);
     if (judgesRes.error) throw judgesRes.error;
     if (scoresRes.error) throw scoresRes.error;
-    if (revealRes.error) throw revealRes.error;
     if (teamRevealsRes.error) throw teamRevealsRes.error;
 
     this.judges.clear();
@@ -118,9 +115,6 @@ class Store {
       this.scores.set(`${s.judgeId}:${s.teamId}`, s);
     }
 
-    const reveal = revealRes.data as RevealRow;
-    this.revealLocked = reveal.reveal_locked;
-    this.revealed = reveal.revealed;
     this.revealedTeamIds = new Set(
       (teamRevealsRes.data as TeamRevealRow[])
         .filter((r) => r.revealed)
@@ -212,69 +206,40 @@ class Store {
     return [...this.scores.values()].filter((s) => s.judgeId === judgeId);
   }
 
-  async setRevealLock(locked: boolean): Promise<void> {
-    await this.patchReveal({ reveal_locked: locked });
-  }
-
-  async setRevealed(revealed: boolean): Promise<void> {
-    await this.patchReveal({ revealed });
-  }
-
   async resetReveal(): Promise<void> {
     const sb = supabase();
     // Flip every team_reveals row back to false in a single UPDATE.
     // `neq("team_id", -1)` matches all rows (PostgREST requires a filter).
-    const { error: trErr } = await sb
+    const { error } = await sb
       .from("team_reveals")
       .update({ revealed: false, revealed_at: null })
       .neq("team_id", -1);
-    if (trErr) throw trErr;
+    if (error) throw error;
     this.revealedTeamIds = new Set();
-    await this.patchReveal({ reveal_locked: false, revealed: false });
+    this.broadcast({ type: "update", state: this.snapshot() });
   }
 
   async revealTeam(teamId: number): Promise<void> {
     if (!TEAMS.some((t) => t.id === teamId)) return;
     const sb = supabase();
-    const { error: trErr } = await sb
+    const { error } = await sb
       .from("team_reveals")
       .update({ revealed: true, revealed_at: new Date().toISOString() })
       .eq("team_id", teamId);
-    if (trErr) throw trErr;
+    if (error) throw error;
     this.revealedTeamIds.add(teamId);
-    await this.patchReveal({
-      reveal_locked: true,
-      revealed: this.revealedTeamIds.size >= TEAMS.length,
-    });
+    this.broadcast({ type: "update", state: this.snapshot() });
   }
 
   async unrevealTeam(teamId: number): Promise<void> {
     if (!this.revealedTeamIds.has(teamId)) return;
     const sb = supabase();
-    const { error: trErr } = await sb
+    const { error } = await sb
       .from("team_reveals")
       .update({ revealed: false, revealed_at: null })
       .eq("team_id", teamId);
-    if (trErr) throw trErr;
-    this.revealedTeamIds.delete(teamId);
-    await this.patchReveal({
-      reveal_locked: this.revealedTeamIds.size > 0,
-      revealed: false,
-    });
-  }
-
-  private async patchReveal(patch: Partial<RevealRow>): Promise<void> {
-    const sb = supabase();
-    const { data, error } = await sb
-      .from("reveal_state")
-      .update({ ...patch, updated_at: new Date().toISOString() })
-      .eq("id", 1)
-      .select()
-      .single();
     if (error) throw error;
-    const row = data as RevealRow;
-    this.revealLocked = row.reveal_locked;
-    this.revealed = row.revealed;
+    this.revealedTeamIds.delete(teamId);
     this.broadcast({ type: "update", state: this.snapshot() });
   }
 

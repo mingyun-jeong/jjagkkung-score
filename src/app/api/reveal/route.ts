@@ -8,8 +8,6 @@ export const dynamic = "force-dynamic";
 export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as {
     judgeId?: string;
-    locked?: boolean;
-    revealed?: boolean;
     reset?: boolean;
     revealTeamId?: number;
     unrevealTeamId?: number;
@@ -25,8 +23,6 @@ export async function POST(req: NextRequest) {
   if (body.reset) {
     await store.resetReveal();
   } else {
-    if (typeof body.locked === "boolean") await store.setRevealLock(body.locked);
-    if (typeof body.revealed === "boolean") await store.setRevealed(body.revealed);
     if (typeof body.revealTeamId === "number")
       await store.revealTeam(body.revealTeamId);
     if (typeof body.unrevealTeamId === "number")
